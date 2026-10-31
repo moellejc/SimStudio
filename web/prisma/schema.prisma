@@ -47,9 +47,24 @@ model Simulation {
   finishedAt             DateTime?  @map("finished_at") @db.Timestamptz(3)
   user                   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   artifacts              Artifact[]
+  metrics                SimMetric[]
 
   @@index([userId, createdAt])
   @@map("simulations")
+}
+
+/// Scalar rows from post.metrics_to_rows. value is null when the metric was not detected.
+model SimMetric {
+  id         String     @id @default(uuid()) @db.Uuid
+  simId      String     @map("sim_id") @db.Uuid
+  name       String
+  value      Float?
+  unit       String
+  simulation Simulation @relation(fields: [simId], references: [id], onDelete: Cascade)
+
+  @@unique([simId, name])
+  @@index([simId])
+  @@map("sim_metrics")
 }
 
 model Artifact {

@@ -54,7 +54,7 @@ class DeckSpec:
     threads: int = 1
     nanim: int = 8
     nth: int = 40
-    zshift: float = 1.0
+    zshift: float = 0.0
     mock: bool = False
 
 
@@ -140,10 +140,12 @@ def launch_engine(
     *,
     mock: bool = False,
     cancel_flag=None,
+    log=None,
 ) -> LaunchResult:
     """Run starter, then OpenMP engine, under a displacement watch.
 
     mock=True skips the solver and writes stand-in outputs so post/ can run.
+    `log(stream, line)` receives starter and engine stdout when the real binary runs.
     """
     if mock or os.environ.get("SIM_MODE", "").lower() == "mock":
         from runner.mock_run import write_mock_outputs
@@ -151,4 +153,11 @@ def launch_engine(
         return write_mock_outputs(run_dir, name, threads, stop_displacement_mm)
     from runner.launch import run_openmp
 
-    return run_openmp(run_dir, name, threads, stop_displacement_mm, cancel_flag=cancel_flag)
+    return run_openmp(
+        run_dir,
+        name,
+        threads,
+        stop_displacement_mm,
+        cancel_flag=cancel_flag,
+        log=log,
+    )

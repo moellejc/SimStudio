@@ -112,7 +112,7 @@ pushed handle end (top 10 mm)
 {f(0)}{f(0)}{f(0)}
 #  Ioptoff   Iexpams
          0         0
-""" + grnod(11, "handle top nodes", topn) + f"""/BCS/1
+""" + grnod(11, "handle top nodes", topn) + """/BCS/1
 pushed end: lateral X,Y fixed, rotations free (pinned)
 #  Tra rot   skew_ID  grnod_ID
    110 000         0        12

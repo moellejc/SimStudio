@@ -12,7 +12,15 @@ dependencies = [
   "sqlalchemy>=2.0",
   "psycopg[binary]>=3.2",
   "pydantic-settings>=2.4",
-  "numpy>=1.26",
+  "numpy>=2",
+  "pillow>=10",
+  "scipy>=1.13",
+  "pandas>=2.2",
+  "pyvista>=0.44",
+  "vtk>=9.3",
+  "matplotlib>=3.8",
+  "imageio>=2.34",
+  "imageio-ffmpeg>=0.5",
 ]
 
 [project.optional-dependencies]
@@ -30,7 +38,8 @@ pythonpath = ["."]
 [tool.ruff]
 line-length = 110
 target-version = "py312"
+extend-exclude = ["simstudio/gen"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
-ignore = ["E501"]
+ignore = ["E501", "E731"]

@@ -9,9 +9,31 @@ not fatal; the watcher keeps polling until the engine exits.
 from __future__ import annotations
 
 import os
+import shutil
 import signal
+import subprocess
 import sys
+import tempfile
 import time
+
+
+def _th_to_csv(t01: str, csv_path: str) -> bool:
+    """Convert a binary T01 with the OpenMP-toolchain th_to_csv, if it is installed."""
+    exe = os.environ.get("OPENRADIOSS_EXEC", "")
+    binary = os.path.join(exe, "th_to_csv_linux64_gf") if exe else ""
+    if not (binary and os.access(binary, os.X_OK)):
+        binary = shutil.which("th_to_csv_linux64_gf") or ""
+    if not binary:
+        return False
+    with tempfile.TemporaryDirectory() as tmp:
+        name = os.path.basename(t01)
+        shutil.copy(t01, os.path.join(tmp, name))
+        subprocess.run([binary, name], cwd=tmp, capture_output=True, check=False)
+        produced = os.path.join(tmp, name + ".csv")
+        if not os.path.exists(produced):
+            return False
+        shutil.copy(produced, csv_path)
+        return True
 
 
 def _displacement(run_dir: str, name: str) -> tuple[float, float] | None:
@@ -19,13 +41,7 @@ def _displacement(run_dir: str, name: str) -> tuple[float, float] | None:
     csv_path = os.path.join(run_dir, name + "T01.csv")
     t01 = os.path.join(run_dir, name + "T01")
     if not os.path.exists(csv_path) and os.path.exists(t01):
-        try:
-            from post.th import load
-
-            df = load(t01)
-            csv_path = os.path.join(run_dir, name + "T01.csv")
-            df.to_csv(csv_path, index=False)
-        except Exception:
+        if not _th_to_csv(t01, csv_path):
             return None
     if not os.path.exists(csv_path):
         return None

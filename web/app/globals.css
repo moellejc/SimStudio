@@ -117,6 +117,26 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+:root {
+  --background: #f3efe6;
+  --foreground: #1c1915;
+  --card: #faf7f2;
+  --card-foreground: #1c1915;
+  --popover: #faf7f2;
+  --popover-foreground: #1c1915;
+  --primary: #9a3412;
+  --primary-foreground: #fffaf5;
+  --secondary: #efe8dc;
+  --secondary-foreground: #1c1915;
+  --muted: #efe8dc;
+  --muted-foreground: #5c5348;
+  --accent: #efe8dc;
+  --accent-foreground: #1c1915;
+  --border: #e4d9c8;
+  --input: #e4d9c8;
+  --ring: #c2410c;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
