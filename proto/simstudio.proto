@@ -1,0 +1,174 @@
+syntax = "proto3";
+
+package simstudio.v1;
+
+// SimStudio is the contract between the Next.js web tier and the Python sim server.
+// The web tier owns users and is the schema owner (Prisma). The sim server owns
+// meshing, OpenRadioss execution, and post-processing. gRPC is trusted only on the
+// private network.
+service SimStudio {
+  rpc SubmitSim(SubmitSimRequest) returns (SubmitSimResponse);
+  rpc GetStatus(GetStatusRequest) returns (SimStatus);
+  rpc StreamStatus(StreamStatusRequest) returns (stream SimStatus);
+  rpc ListSims(ListSimsRequest) returns (ListSimsResponse);
+  rpc GetResults(GetResultsRequest) returns (SimResults);
+  rpc CancelSim(CancelSimRequest) returns (CancelSimResponse);
+}
+
+enum SimState {
+  SIM_STATE_UNSPECIFIED = 0;
+  QUEUED = 1;
+  MESHING = 2;
+  RUNNING_STARTER = 3;
+  RUNNING_ENGINE = 4;
+  POSTPROCESSING = 5;
+  SUCCEEDED = 6;
+  FAILED = 7;
+  CANCELLED = 8;
+}
+
+// Fork study or other parameterized explicit run.
+// Deck unit system for the fork templates is kg, mm, ms
+// (force kN, stress GPa, energy J, velocity mm/ms).
+message TemplateSpec {
+  // fork_load (gen_deck45, force-controlled) or fork_displacement (gen_deck).
+  string template_id = 1;
+  // steel | aluminum | plastic
+  string material = 2;
+  double end_time_ms = 3;
+  // Applied load for fork_load, in kN. 0.4413 kN is 45 kg * g.
+  double load_kN = 4;
+  double stop_displacement_mm = 5;
+  // Push speed for fork_displacement, mm/ms.
+  double push_velocity_mm_ms = 6;
+  double ramp_ms = 7;
+  int32 threads = 8;
+  double friction = 9;
+}
+
+message DeckUpload {
+  string starter_filename = 1;
+  bytes starter_deck = 2;
+  string engine_filename = 3;
+  bytes engine_deck = 4;
+}
+
+// Photo-derived fork, or an uploaded STL, meshed to Radioss hexes.
+message GeometrySpec {
+  // fork | stl | box
+  string kind = 1;
+  bytes stl = 2;
+  double dx_mm = 3;
+  double dy_mm = 4;
+  int32 nz = 5;
+  double length_mm = 6;
+}
+
+message SubmitSimRequest {
+  string simulation_id = 1;
+  string user_id = 2;
+  string name = 3;
+  bool dry_run = 4;
+  oneof source {
+    TemplateSpec template = 5;
+    DeckUpload deck = 6;
+    GeometrySpec geometry = 7;
+  }
+}
+
+message SubmitSimResponse {
+  string simulation_id = 1;
+  SimState state = 2;
+  string message = 3;
+}
+
+message GetStatusRequest {
+  string simulation_id = 1;
+  string user_id = 2;
+}
+
+message SimStatus {
+  string simulation_id = 1;
+  SimState state = 2;
+  double progress = 3;
+  string message = 4;
+  string error_message = 5;
+  int64 updated_at_ms = 6;
+}
+
+message StreamStatusRequest {
+  string simulation_id = 1;
+  string user_id = 2;
+}
+
+message ListSimsRequest {
+  string user_id = 1;
+  int32 limit = 2;
+}
+
+message SimSummary {
+  string simulation_id = 1;
+  string name = 2;
+  SimState state = 3;
+  double progress = 4;
+  string message = 5;
+  string template_id = 6;
+  string material = 7;
+  bool dry_run = 8;
+  string created_at = 9;
+  double peak_force_n = 10;
+  double max_von_mises_pa = 11;
+  double max_plastic_strain = 12;
+}
+
+message ListSimsResponse {
+  repeated SimSummary simulations = 1;
+}
+
+message GetResultsRequest {
+  string simulation_id = 1;
+  string user_id = 2;
+}
+
+message ArtifactRef {
+  string id = 1;
+  string kind = 2;
+  string filename = 3;
+  string s3_key = 4;
+  int64 size_bytes = 5;
+  string content_type = 6;
+}
+
+message MetricSeries {
+  string name = 1;
+  string unit = 2;
+  repeated double times = 3;
+  repeated double values = 4;
+}
+
+// GetResults returns the post/ summary.json document (raw_json) plus the
+// scalars Postgres stores for querying: peak force (N), max von Mises (Pa),
+// max plastic strain, and energy-balance error (percent).
+message SimResults {
+  string simulation_id = 1;
+  SimState state = 2;
+  string summary_json = 3;
+  double peak_force_n = 4;
+  double max_von_mises_pa = 5;
+  double max_plastic_strain = 6;
+  double energy_balance_error_pct = 7;
+  repeated ArtifactRef artifacts = 8;
+  repeated MetricSeries series = 9;
+  string error_message = 10;
+}
+
+message CancelSimRequest {
+  string simulation_id = 1;
+  string user_id = 2;
+}
+
+message CancelSimResponse {
+  string simulation_id = 1;
+  SimState state = 2;
+  string message = 3;
+}
