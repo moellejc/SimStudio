@@ -65,7 +65,11 @@ services:
       SIM_MODE: ${SIM_MODE:-mock}
       OPENRADIOSS_PATH: /opt/solver
       SOLVER_ROOT: /opt/solver
-      OMP_NUM_THREADS: "2"
+      OPENRADIOSS_EXEC: /opt/solver/exec
+      # Default thread count for the OpenMP engine. A study can pass its own
+      # thread count; that value is what engine_linux64_gf receives.
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-2}
+      OMP_STACKSIZE: ${OMP_STACKSIZE:-400m}
       WORKER_CONCURRENCY: "1"
       MOCK_PACE_S: "0.4"
       WORK_ROOT: /tmp/radlab
@@ -99,6 +103,9 @@ services:
       JWT_SECRET: dev-only-change-me
       COOKIE_SECURE: "false"
       PROTO_PATH: /proto/simstudio.proto
+      # Docker sets HOSTNAME to the container id. Next.js then binds only that
+      # address, so the healthcheck on 127.0.0.1:3000 is refused.
+      HOSTNAME: "0.0.0.0"
     ports:
       - "43123:3000"
     depends_on:

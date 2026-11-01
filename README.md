@@ -2,7 +2,9 @@
 
 A workbench for OpenRadioss explicit studies. You register, submit a fork template or a starter/engine deck pair, and watch the run move from mesh to starter to the OpenMP engine. When it finishes, the page shows peak wall force, maximum von Mises stress, plastic strain, an energy-balance check, downloadable artifacts, and a frame viewer.
 
-The public solver binaries now ship as [OpenCourant](https://github.com/OpenCourant/OpenCourant), the community continuation of OpenRadioss. The deck format is unchanged (`*_0000.rad` then `*_0001.rad`). This repo runs **`engine_linux64_gf` with `OMP_NUM_THREADS`**. It does not call `engine_linux64_gf_ompi`; that MPI build fails here.
+The public solver binaries ship as [OpenCourant](https://github.com/OpenCourant/OpenCourant), the community continuation of OpenRadioss. The old OpenRadioss GitHub URL 404s. The deck format is unchanged (`*_0000.rad` then `*_0001.rad`). This repo runs **`engine_linux64_gf`** (OpenMP). `OMP_NUM_THREADS` defaults to 2 and is set from the environment or from the study's thread count. It does not call `engine_linux64_gf_ompi`; that MPI build fails here.
+
+The sim-server image pins OpenCourant release **`latest-20261011`**, file `OpenCourant_linux64.zip`, sha256 `6cb419677ca36d73acb96218cc0cf5e4f7d50494d9c7812ba27935e3c0f8ec94` (the GitHub release asset digest). `INSTALL_SOLVER=true` downloads that zip and checks the sum before unpacking.
 
 ```mermaid
 flowchart LR
@@ -98,10 +100,10 @@ docker compose up --build
 
 Open [http://127.0.0.1:43123](http://127.0.0.1:43123). Register, submit a fork study, and leave **Dry run** checked. The mock path still meshes with `geometry.build_fork`, writes real starter and engine decks, synthesizes a listing and a cumulative wall impulse, then fills `summary.json` and the viewer.
 
-`SIM_MODE` defaults to `mock`, so a dry run is not required for the stack to come up, and an unchecked dry run still will not call a missing binary. Set `SIM_MODE=auto` and `INSTALL_SOLVER=true` when you want the image to download the OpenCourant Linux x86_64 release and run `starter_linux64_gf` then `engine_linux64_gf`.
+`SIM_MODE` defaults to `mock`, so a dry run is not required for the stack to come up, and an unchecked dry run still will not call a missing binary. Set `SIM_MODE=auto` and `INSTALL_SOLVER=true` to download the pinned OpenCourant `latest-20261011` zip, verify its sha256, and run `starter_linux64_gf` then `engine_linux64_gf`. Override the default thread count with `OMP_NUM_THREADS` (the study's thread field still wins for that engine process).
 
 ```bash
-INSTALL_SOLVER=true SIM_MODE=auto docker compose up --build
+INSTALL_SOLVER=true SIM_MODE=auto OMP_NUM_THREADS=2 docker compose up --build
 ```
 
 Development placeholders live in `.env.example`, `web/.env.example`, and `sim-server/.env.example`. Nothing in the repo is a production secret. Compose uses `radlab` / `radlab` for Postgres and `test` / `test` for LocalStack, which are the usual local stand-ins.
