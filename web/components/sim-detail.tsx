@@ -28,6 +28,10 @@ type Simulation = {
     buckling_force_N?: number | null;
     max_von_mises_Pa?: number | null;
     max_plastic_strain?: number | null;
+    /** True when the run ended before the next frame, so the peak is a lower bound. */
+    max_von_mises_lower_bound?: boolean | null;
+    max_plastic_strain_lower_bound?: boolean | null;
+    lower_bound_note?: string | null;
     energy_balance_ok?: boolean | null;
     added_mass_pct?: number | null;
     buckling_reason?: string | null;
@@ -129,14 +133,29 @@ export function SimDetail({ id }: { id: string }) {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metric label="Peak force" value={formatForceN(summary?.peak_force_N)} hint="Applied load or floor reaction, in N" />
         <Metric label="Buckling force" value={formatForceN(summary?.buckling_force_N)} hint={summary?.buckling_reason || "Null when none is detected"} />
-        <Metric label="Max von Mises" value={formatPa(summary?.max_von_mises_Pa)} hint="Pascals" />
-        <Metric label="Max plastic strain" value={formatStrain(summary?.max_plastic_strain)} />
+        <Metric
+          label="Max von Mises"
+          value={lowerBound(summary?.max_von_mises_lower_bound, formatPa(summary?.max_von_mises_Pa))}
+          hint={summary?.max_von_mises_lower_bound ? `Pascals · lower bound${summary?.lower_bound_note ? `: ${summary.lower_bound_note}` : ""}` : "Pascals"}
+        />
+        <Metric
+          label="Max plastic strain"
+          value={lowerBound(summary?.max_plastic_strain_lower_bound, formatStrain(summary?.max_plastic_strain))}
+          hint={summary?.max_plastic_strain_lower_bound ? "lower bound" : undefined}
+        />
       </div>
       <p className="text-sm text-[#5c5348]">
         Energy balance {summary?.energy_balance_ok == null ? "—" : summary.energy_balance_ok ? "within 5%" : "outside 5%"}
         {summary?.added_mass_pct != null ? ` · added mass ${formatPercent(summary.added_mass_pct)}` : ""}
         {summary?.fracture_onset ? ` · fracture at ${formatForceN(summary.fracture_onset.load_N)}` : ""}
       </p>
+      {summary?.notes?.length ? (
+        <ul className="list-disc space-y-1 pl-5 text-sm text-[#5c5348]">
+          {summary.notes.map((note, index) => (
+            <li key={index}>{note}</li>
+          ))}
+        </ul>
+      ) : null}
       {geometry ? (
         <p className="text-sm text-[#5c5348]">
           Mesh {geometry.nodes} nodes, {geometry.bricks} bricks, volume {geometry.volume_mm3?.toFixed(0)} mm³. Bounding box Z{" "}
@@ -192,6 +211,10 @@ export function SimDetail({ id }: { id: string }) {
       </section>
     </div>
   );
+}
+
+function lowerBound(flag: boolean | null | undefined, text: string) {
+  return flag && text !== "—" ? `≥ ${text}` : text;
 }
 
 function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {

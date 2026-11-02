@@ -1,0 +1,27 @@
+# Memory-capped overlay for a shared machine (about 4.5 GB total).
+# Usage:
+#   INSTALL_SOLVER=true SIM_MODE=auto OMP_NUM_THREADS=2 \
+#     docker compose -f docker-compose.yml -f docker-compose.lowmem.yml up --build -d
+services:
+  postgres:
+    mem_limit: 512m
+    # Loopback only, so host-side tools (import_forks.py, psql, redis-cli) can reach them.
+    ports: ["127.0.0.1:5432:5432"]
+  redis:
+    mem_limit: 128m
+    ports: ["127.0.0.1:6379:6379"]
+    command: ["redis-server", "--maxmemory", "96mb", "--save", "", "--appendonly", "no"]
+  localstack:
+    mem_limit: 768m
+    ports: ["127.0.0.1:4566:4566"]
+  migrate:
+    mem_limit: 512m
+  sim-server:
+    mem_limit: 2g
+    cpus: 2
+    environment:
+      MOCK_PACE_S: "0"
+  web:
+    mem_limit: 768m
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=512"
