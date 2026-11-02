@@ -3,7 +3,7 @@ import path from "node:path";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { fitCamera, fitDistance, morphedBox } from "../lib/fit-camera";
-import { defaultFrame, parseSurfaceContract, type SurfaceContract } from "../lib/glb-contract";
+import { defaultFrame, isPhysicalFrame, parseSurfaceContract, type SurfaceContract } from "../lib/glb-contract";
 
 function frames(loads: (number | null)[]): SurfaceContract["frames"] {
   return loads.map((loadN, index) => ({ loadN, loadTime: index, animTime: index / 10 })) as SurfaceContract["frames"];
@@ -60,6 +60,14 @@ describe("default frame", () => {
 
   it("ignores frames after the physical cut-off", () => {
     expect(defaultFrame({ frames: frames([0, 10, 30, 90]), frameCount: 4, physicalUntil: 2 })).toBe(2);
+  });
+
+  it("never opens past extras.last_physical_frame", () => {
+    const contract = { frames: frames([0, 10, 30, 60, 90]), frameCount: 5, physicalUntil: null, lastPhysicalFrame: 2 };
+    expect(defaultFrame(contract)).toBe(2);
+    expect(defaultFrame({ ...contract, frames: frames([null, null, null, null, null]) }, [1, 2, 3, 4, 9])).toBe(2);
+    expect(isPhysicalFrame(contract, 3)).toBe(false);
+    expect(isPhysicalFrame(contract, 2)).toBe(true);
   });
 
   it("falls back to the max von Mises frame without load data", () => {

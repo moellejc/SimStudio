@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useRef, useState } from "react";
-import { defaultFrame, type SurfaceContract } from "@/lib/glb-contract";
+import { defaultFrame, isPhysicalFrame, type SurfaceContract } from "@/lib/glb-contract";
 
 const GltfViewport = dynamic(() => import("@/components/gltf-viewport").then((mod) => mod.GltfViewport), {
   ssr: false,
@@ -72,6 +72,7 @@ export function ResultViewer({ id, partUrl, mp4Url }: { id: string; partUrl: str
         />
         <span className="font-mono text-xs">
           frame {Math.min(frame, frames - 1) + 1}/{frames} · {millis} ms · {load}
+          {contract && !isPhysicalFrame(contract, Math.min(frame, frames - 1)) ? " · unphysical" : ""}
         </span>
         <select value={field} onChange={(event) => setField(event.target.value as "stress" | "strain")} className="rounded border px-2 py-1">
           <option value="stress">von Mises stress</option>

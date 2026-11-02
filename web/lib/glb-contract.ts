@@ -28,6 +28,8 @@ export type SurfaceContract = {
   stressUnit: string;
   /** Last physical load_time (s) when the export marks later frames unphysical; null when not given. */
   physicalUntil: number | null;
+  /** Last physically valid frame index (0-based) from extras.last_physical_frame; null when not given. */
+  lastPhysicalFrame: number | null;
 };
 
 type GltfJson = {
@@ -85,7 +87,13 @@ export function parseSurfaceContract(buffer: ArrayBuffer): SurfaceContract {
     plasticStrainMax: strain ? Number(strain[1]) : 1,
     hasPlasticStrain: strainNames.length > 0,
     stressUnit: String(extras.stress_unit ?? "Pa"),
-    physicalUntil: extras.physical_until_s == null ? null : Number(extras.physical_until_s),
+    physicalUntil:
+      extras.last_physical_time_s != null
+        ? Number(extras.last_physical_time_s)
+        : extras.physical_until_s == null
+          ? null
+          : Number(extras.physical_until_s),
+    lastPhysicalFrame: extras.last_physical_frame == null ? null : Number(extras.last_physical_frame),
   };
 }
 
@@ -102,13 +110,13 @@ export function frameAtTime(time: number, times: number[]): number {
  * after physicalUntil), else the frame with the largest von Mises value (vmPeaks[k] = max over frame k),
  * else the last frame.
  */
-export function defaultFrame(contract: Pick<SurfaceContract, "frames" | "frameCount" | "physicalUntil">, vmPeaks?: number[] | null): number {
+export function defaultFrame(
+  contract: Pick<SurfaceContract, "frames" | "frameCount" | "physicalUntil"> & { lastPhysicalFrame?: number | null },
+  vmPeaks?: number[] | null,
+): number {
   const count = Math.max(contract.frameCount, 0);
   if (count === 0) return 0;
-  const physical = (index: number) => {
-    const frame = contract.frames[index];
-    return contract.physicalUntil == null || !frame || frame.loadTime <= contract.physicalUntil + 1e-9;
-  };
+  const physical = (index: number) => isPhysicalFrame(contract, index);
   let best = -1;
   let bestLoad = 0;
   for (let i = 0; i < Math.min(count, contract.frames.length); i++) {
@@ -131,5 +139,16 @@ export function defaultFrame(contract: Pick<SurfaceContract, "frames" | "frameCo
     }
     if (best >= 0) return best;
   }
-  return count - 1;
+  const last = contract.lastPhysicalFrame;
+  return last != null && last >= 0 && last < count ? last : count - 1;
+}
+
+/** False for frames after extras.last_physical_frame (or after the physical time cut-off). */
+export function isPhysicalFrame(
+  contract: Pick<SurfaceContract, "frames" | "physicalUntil"> & { lastPhysicalFrame?: number | null },
+  index: number,
+): boolean {
+  if (contract.lastPhysicalFrame != null) return index <= contract.lastPhysicalFrame;
+  const frame = contract.frames[index];
+  return contract.physicalUntil == null || !frame || frame.loadTime <= contract.physicalUntil + 1e-9;
 }
