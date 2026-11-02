@@ -1,0 +1,125 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: radlab
+      POSTGRES_PASSWORD: radlab
+      POSTGRES_DB: radlab
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U radlab -d radlab"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  localstack:
+    image: localstack/localstack:4
+    environment:
+      SERVICES: s3
+      AWS_DEFAULT_REGION: us-east-1
+    volumes:
+      - ./infra/localstack/init-s3.sh:/etc/localstack/init/ready.d/init-s3.sh
+      - lsdata:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  migrate:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      target: build
+    environment:
+      DATABASE_URL: postgresql://radlab:radlab@postgres:5432/radlab
+    command: ["sh", "-c", "i=0; while [ $$i -lt 15 ]; do npx prisma migrate deploy && exit 0; i=$$((i+1)); sleep 2; done; exit 1"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  sim-server:
+    build:
+      context: .
+      dockerfile: sim-server/Dockerfile
+      args:
+        INSTALL_SOLVER: ${INSTALL_SOLVER:-false}
+    environment:
+      DATABASE_URL: postgresql://radlab:radlab@postgres:5432/radlab
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://localstack:4566
+      S3_BUCKET: radlab-artifacts
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      SIM_MODE: ${SIM_MODE:-mock}
+      OPENRADIOSS_PATH: /opt/solver
+      SOLVER_ROOT: /opt/solver
+      OPENRADIOSS_EXEC: /opt/solver/exec
+      # Default thread count for the OpenMP engine. A study can pass its own
+      # thread count; that value is what engine_linux64_gf receives.
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-2}
+      OMP_STACKSIZE: ${OMP_STACKSIZE:-400m}
+      WORKER_CONCURRENCY: "1"
+      MOCK_PACE_S: "0.4"
+      WORK_ROOT: /tmp/radlab
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://radlab:radlab@postgres:5432/radlab
+      REDIS_URL: redis://redis:6379/0
+      SIM_GRPC_ADDR: sim-server:50051
+      S3_ENDPOINT_URL: http://localstack:4566
+      S3_BUCKET: radlab-artifacts
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      JWT_SECRET: dev-only-change-me
+      COOKIE_SECURE: "false"
+      PROTO_PATH: /proto/simstudio.proto
+      # Docker sets HOSTNAME to the container id. Next.js then binds only that
+      # address, so the healthcheck on 127.0.0.1:3000 is refused.
+      HOSTNAME: "0.0.0.0"
+    ports:
+      - "43123:3000"
+    depends_on:
+      sim-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+volumes:
+  pgdata: {}
+  lsdata: {}

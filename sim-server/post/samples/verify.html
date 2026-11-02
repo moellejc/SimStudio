@@ -1,0 +1,59 @@
+<!doctype html><html><head><meta charset="utf-8"><title>loading</title>
+<style>body{margin:0;background:#fff}#info{position:absolute;left:8px;top:8px;font:14px monospace;background:#fffc}</style></head>
+<body><pre id="info">loading</pre><pre id="result" style="display:none"></pre>
+<script src="../assets/three/three.min.js"></script>
+<script src="../assets/three/GLTFLoader.js"></script>
+<script>
+const ERR=[];const _ce=console.error;console.error=(...a)=>{ERR.push(a.join(' ').slice(0,300));_ce(...a)};
+const _cw=console.warn;console.warn=(...a)=>{ERR.push('W:'+a.join(' ').slice(0,300));_cw(...a)};
+// Reference loader for the SimStudio morph GLB: ?glb=sample.glb&frame=K (K = -1 -> last; default plays).
+const q = new URLSearchParams(location.search);
+const W = 800, H = 600;
+const renderer = new THREE.WebGLRenderer({antialias: true, preserveDrawingBuffer: true});
+renderer.setSize(W, H); renderer.setClearColor(0xffffff); document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 1.0));
+const cam = new THREE.PerspectiveCamera(35, W / H, 1e-4, 1e4);
+function jet(t){t=Math.min(1,Math.max(0,t));const c=v=>Math.min(1,Math.max(0,v));return [c(1.5-Math.abs(4*t-3)),c(1.5-Math.abs(4*t-2)),c(1.5-Math.abs(4*t-1))];}
+new THREE.GLTFLoader().load(q.get('glb') || 'sample.glb', gltf => {
+  scene.add(gltf.scene);
+  const mesh = gltf.scene.getObjectByProperty('type', 'Mesh');
+  const ex = mesh.userData;                      // mesh.extras -> userData
+  const geo = mesh.geometry, n = ex.n_frames;
+  const [vmin, vmax] = ex.von_mises_range;
+  const mixer = new THREE.AnimationMixer(gltf.scene);
+  const action = mixer.clipAction(gltf.animations[0]);
+  action.setLoop(THREE.LoopOnce); action.clampWhenFinished = true; action.play();  // no wrap at the last key
+  // colours: start from COLOR_0 (last frame) then recolour per frame from _von_mises_####
+  const col = geo.attributes.color;
+  function setFrame(k){
+    action.reset().play(); mixer.setTime(ex.frames[k].anim_time);
+    const a = geo.attributes['_von_mises_' + String(k).padStart(4, '0')];
+    for (let i = 0; i < a.count; i++){const c = jet((a.getX(i)-vmin)/(vmax-vmin||1)); col.setXYZ(i, c[0], c[1], c[2]);}
+    col.needsUpdate = true;
+  }
+  // fit camera on the union of all frames
+  const P = geo.attributes.position, T = geo.morphAttributes.position, box = new THREE.Box3(), v = new THREE.Vector3();
+  for (let k = 0; k < n; k++) for (let i = 0; i < P.count; i++){v.set(P.getX(i)+T[k].getX(i),P.getY(i)+T[k].getY(i),P.getZ(i)+T[k].getZ(i)); box.expandByPoint(v);}
+  const c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length();
+  cam.position.set(c.x + 0.9*r, c.y + 0.6*r, c.z + 1.1*r); cam.lookAt(c);
+  let fr = q.has('frame') ? parseInt(q.get('frame')) : null;
+  if (fr !== null && fr < 0) fr = n + fr;
+  function report(k){
+    // morphed CPU positions for frame k (what the GPU shows): bbox + influence vector
+    const inf = Array.from(mesh.morphTargetInfluences), b = new THREE.Box3();
+    for (let i = 0; i < P.count; i++){let x=P.getX(i),y=P.getY(i),z=P.getZ(i);for(let j=0;j<n;j++) if(inf[j]){x+=inf[j]*T[j].getX(i);y+=inf[j]*T[j].getY(i);z+=inf[j]*T[j].getZ(i);} b.expandByPoint(new THREE.Vector3(x,y,z));}
+    const a = geo.attributes['_von_mises_' + String(k).padStart(4,'0')]; let imax=0, imin=0;
+    for (let i=0;i<a.count;i++){if(a.getX(i)>a.getX(imax))imax=i; if(a.getX(i)<a.getX(imin))imin=i;}
+    const res = {frame:k, n_frames:n, morph_targets:T.length, active:inf.indexOf(1), anim_time:ex.frames[k].anim_time,
+      load_N:ex.frames[k].load_N, bbox_min:b.min.toArray(), bbox_max:b.max.toArray(),
+      vm_max:a.getX(imax), color_at_max:[col.getX(imax),col.getY(imax),col.getZ(imax)], color_at_min:[col.getX(imin),col.getY(imin),col.getZ(imin)],
+      attrs:Object.keys(geo.attributes).length, errors:ERR, calls:renderer.info.render.calls, programs:(renderer.info.programs||[]).length, three:THREE.REVISION};
+    document.getElementById('result').textContent = JSON.stringify(res);
+    document.getElementById('info').textContent = `frame ${k+1}/${n}  t=${(ex.frames[k].anim_time*1e3).toFixed(1)} ms  load=${(ex.frames[k].load_N||0).toFixed(0)} N  VMmax=${a.getX(imax).toFixed(1)} Pa`;
+    document.title = 'done';
+  }
+  if (fr !== null){ setFrame(fr); renderer.render(scene, cam); report(fr); (function loop(){ renderer.render(scene, cam); requestAnimationFrame(loop); })(); }
+  else { let k = 0; setInterval(() => { setFrame(k); renderer.render(scene, cam); report(k); k = (k+1) % n; }, 150); }
+}, undefined, e => { document.title = 'error'; document.getElementById('info').textContent = 'ERROR ' + e; });
+</script></body></html>

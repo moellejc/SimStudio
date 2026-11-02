@@ -1,0 +1,7 @@
+aws_region             = "us-east-1"
+project                = "simstudio"
+ecs_ami_id             = "ami-0123456789abcdef0"
+worker_instance_type   = "c6i.xlarge"
+worker_desired_capacity = 1
+db_instance_class      = "db.t4g.micro"
+redis_node_type        = "cache.t4g.micro"
