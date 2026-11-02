@@ -103,6 +103,16 @@ export function NewSimForm() {
             <input name="engine" type="file" accept=".rad" required className="mt-1 block w-full text-sm" />
           </label>
           <Field name="threads" label="OpenMP threads" defaultValue="2" />
+          <label className="block text-sm">
+            Deck units
+            <select name="units" defaultValue="auto" className="mt-1 w-full rounded-md border border-[#e4d9c8] bg-white px-3 py-2">
+              <option value="auto">From /BEGIN</option>
+              <option value="kg-m-s">kg, m, s (Pa, N)</option>
+              <option value="g-mm-ms">g, mm, ms (MPa, N)</option>
+              <option value="kg-mm-ms">kg, mm, ms (GPa, kN)</option>
+              <option value="t-mm-s">t, mm, s (MPa, N)</option>
+            </select>
+          </label>
         </div>
       )}
       <label className="flex items-start gap-2 text-sm">

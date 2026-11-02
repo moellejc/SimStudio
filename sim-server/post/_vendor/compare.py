@@ -123,10 +123,10 @@ def _isint(t):
     return bool(re.match(r"^-?\d+$", t))
 
 
-def parse_deck(deck, run=None, name=None):
+def parse_deck(deck, run=None, name=None, units_override=None):
     info = {"deck": deck, "units": None, "th": {}, "impvel": [], "cload": [], "pload": [], "functs": {},
             "grnod": {}, "sensors": [], "has_fail": False}
-    u = pp.deck_units(run or os.path.dirname(deck or "."), name, deck)
+    u = pp.deck_units(run or os.path.dirname(deck or "."), name, deck, override=units_override)
     info["units"] = [u["mass"], u["length"], u["time"]] if u["mass"] else None
     info["force_to_N"] = u["force_to_N"] if u["known"] else None
     info["stress_to_Pa"] = u["stress_to_Pa"] if u["known"] else None

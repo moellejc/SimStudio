@@ -167,7 +167,7 @@ def _ended_early(listings, t_end, t_reached):
 # ------------------------------------------------------------------ main entry
 def process_run(run_dir, out_dir, *, ramp_duration=None, cmap="jet", name=None, field=None, fps=8,
                 size=(1280, 720), video=True, warp=1.0, mode="auto", gltf=True, gltf_max_frames=None,
-                **buckling_kw):
+                units_override=None, **buckling_kw):
     """Post-process one OpenRadioss run folder into out_dir (run_dir is only read). Returns the metrics dict.
 
     Writes out_dir/vtk/<name>_NNN.vtk (stress in Pa), vtk/frames.json, frames/frame_NNN.png, <name>.mp4/.gif,
@@ -181,8 +181,9 @@ def process_run(run_dir, out_dir, *, ramp_duration=None, cmap="jet", name=None, 
     name, frames, th, outs = pp.discover(run, name)
     if not name:
         raise FileNotFoundError(f"no OpenRadioss outputs (A00x / T01) found in {run}")
-    units = pp.deck_units(run, name)
-    deck = cmp.parse_deck(cmp.find_deck(run, name), run, name)
+    # units_override ('g mm ms', ...) replaces the /BEGIN units when the deck's data use another system
+    units = pp.deck_units(run, name, override=units_override)
+    deck = cmp.parse_deck(cmp.find_deck(run, name), run, name, units_override=units_override)
     t_end = pp.solver_end_time(run, name)
     ts, ramp_end = 1.0, None
     if ramp_duration:
@@ -290,6 +291,7 @@ def process_run(run_dir, out_dir, *, ramp_duration=None, cmap="jet", name=None, 
     metrics = {
         "run": run, "name": name, "mode": tha["mode"] if tha else None,
         "units_in": [units["mass"], units["length"], units["time"]], "units_known": units["known"],
+        "units_override": units.get("override"),
         "peak_force_N": peak,
         "peak_force_kind": None if not tha else ("applied load" if tha["mode"] == "force" else "floor reaction"),
         "peak_reaction_N": float(np.max(tha["reaction_N"])) if tha and tha["reaction_N"] is not None else None,

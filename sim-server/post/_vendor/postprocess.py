@@ -61,11 +61,31 @@ def find_starter_deck(run, name=None):
     return None
 
 
-def deck_units(run, name=None, deck=None):
-    """Return unit info from /BEGIN (input units line). Factors convert model units -> SI."""
+def parse_units(spec):
+    """'kg m s' / 'g-mm-ms' / ('kg', 'mm', 'ms') -> (mass, length, time) tuple, or None for '', 'auto', None."""
+    if not spec or (isinstance(spec, str) and spec.strip().lower() == "auto"):
+        return None
+    toks = tuple(spec) if not isinstance(spec, str) else tuple(re.split(r"[\s,/-]+", spec.strip()))
+    if len(toks) != 3 or toks[0] not in MASS_SI or toks[1] not in LEN_SI or toks[2] not in TIME_SI:
+        raise ValueError(f"unknown unit system {spec!r} (want mass length time, e.g. 'kg mm ms')")
+    return toks
+
+
+def deck_units(run, name=None, deck=None, override=None):
+    """Return unit info from /BEGIN. Factors convert model units -> SI.
+
+    /BEGIN carries an input-units line and a work-units line (mass length time). The solver writes
+    anim/TH results in WORK units, so the factors come from the work line when it is a valid unit
+    triple; otherwise (missing/blank/unrecognised) from the input line, as before. mass/length/time
+    are the units the factors describe; input_units/work_units keep both lines.
+
+    override ('g mm ms', 'g-mm-ms', a tuple, or None/'auto') replaces /BEGIN for the factors when a deck's
+    /BEGIN does not match its data; u["override"] is then the triple used."""
     deck = deck or find_starter_deck(run, name)
     u = {"deck": deck, "mass": None, "length": None, "time": None, "known": False,
-         "force_to_N": 1.0, "stress_to_Pa": 1.0, "length_to_m": 1.0, "time_to_s": 1.0, "energy_to_J": 1.0}
+         "force_to_N": 1.0, "stress_to_Pa": 1.0, "length_to_m": 1.0, "time_to_s": 1.0, "energy_to_J": 1.0,
+         "input_units": None, "work_units": None, "override": None}
+    forced = parse_units(override)
     if not deck or not os.path.exists(deck):
         return u
     lines = []
@@ -76,17 +96,35 @@ def deck_units(run, name=None, deck=None):
             lines.append(l.rstrip("\n"))
             if len(lines) > 400:
                 break
+
+    def triple(line):
+        toks = line.split() if line is not None and not line.lstrip().startswith("/") else []
+        return tuple(toks[:3]) if len(toks) >= 3 else None
+
+    def known(tr):
+        return bool(tr) and tr[0] in MASS_SI and tr[1] in LEN_SI and tr[2] in TIME_SI
+
     for i, l in enumerate(lines):
         if l.startswith("/BEGIN") and i + 3 < len(lines):
-            toks = lines[i + 3].split()
-            if len(toks) >= 3:
-                M, L, T = toks[:3]
+            inp = triple(lines[i + 3])
+            work = triple(lines[i + 4]) if i + 4 < len(lines) else None
+            u.update(input_units=list(inp) if inp else None, work_units=list(work) if known(work) else None)
+            use = forced or (work if known(work) else inp)
+            if use:
+                M, L, T = use
                 u.update(mass=M, length=L, time=T)
-                if M in MASS_SI and L in LEN_SI and T in TIME_SI:
+                if known(use):
                     m, l_, t = MASS_SI[M], LEN_SI[L], TIME_SI[T]
                     u.update(known=True, force_to_N=m * l_ / t ** 2, stress_to_Pa=m / (l_ * t ** 2),
                              length_to_m=l_, time_to_s=t, energy_to_J=m * l_ ** 2 / t ** 2)
             break
+    if forced and not u["known"]:  # no /BEGIN found: the override still applies
+        M, L, T = forced
+        m, l_, t = MASS_SI[M], LEN_SI[L], TIME_SI[T]
+        u.update(mass=M, length=L, time=T, known=True, force_to_N=m * l_ / t ** 2, stress_to_Pa=m / (l_ * t ** 2),
+                 length_to_m=l_, time_to_s=t, energy_to_J=m * l_ ** 2 / t ** 2)
+    if forced:
+        u["override"] = list(forced)
     return u
 
 

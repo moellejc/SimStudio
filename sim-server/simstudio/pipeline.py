@@ -22,6 +22,7 @@ from runner import (
 )
 from simstudio.config import Settings
 from simstudio.deck_mesh import mesh_from_deck, skip_missing_includes
+from simstudio.sanity import UPLOAD_UNIT_SYSTEMS, force_stress_warning, material_warnings
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class Job:
     starter_text: str = ""
     engine_text: str = ""
     run_name: str = ""
+    units: str = ""  # uploads: "" = /BEGIN, else a sanity.UPLOAD_UNIT_SYSTEMS key overriding it
 
     def to_json(self) -> str:
         return json.dumps(self.__dict__)
@@ -92,7 +94,7 @@ def run_job(job: Job, settings: Settings, bus, sink, storage) -> None:
         geometry_doc: dict = {}
         if job.starter_text and job.engine_text:
             phase("meshing", 8, "Using the uploaded starter and engine decks")
-            mesh = _mesh_from_deck(job.starter_text)
+            mesh = _mesh_from_deck(job.starter_text, job.units)
             if mesh is None:
                 raise RuntimeError("Uploaded starter has no /NODE mesh with /BRICK, /SHELL or /SH3N elements to view")
             geometry_doc = mesh.export_all(str(work / "geometry"), title=job.name)
@@ -182,7 +184,13 @@ def run_job(job: Job, settings: Settings, bus, sink, storage) -> None:
         phase("postprocessing", 90, "Converting animation to VTK (Pa), frames, and metrics")
         post_dir = work / "post_out"
         ramp = 5.0 if job.template_id == "fork_load" else None
-        metrics = process_run(decks.run_dir, str(post_dir), ramp_duration=ramp, video=not mock)
+        override = UPLOAD_UNIT_SYSTEMS.get(job.units) if job.template_id == "upload" else None
+        if override:
+            bus.log(sim, "post", f"unit system override {'/'.join(override)} (instead of /BEGIN)")
+        metrics = process_run(decks.run_dir, str(post_dir), ramp_duration=ramp, video=not mock,
+                              units_override=override)
+        if job.template_id == "upload":
+            metrics.setdefault("notes", []).extend(_unit_notes(job, metrics, geometry_doc))
         metrics["geometry"] = {key: value for key, value in geometry_doc.items() if key != "files"}
         metrics["parameters"] = {
             "template_id": job.template_id,
@@ -193,6 +201,7 @@ def run_job(job: Job, settings: Settings, bus, sink, storage) -> None:
             "dry_run": mock,
             "engine": engine_binary_name(),
             "threads": spec.threads,
+            "units": (job.units or "auto") if job.template_id == "upload" else None,
         }
         attach_sample_surface(metrics, post_dir)
         rows = metrics_to_rows(metrics, sim)
@@ -226,11 +235,20 @@ class Cancelled(Exception):
     pass
 
 
-def _mesh_from_deck(text: str):
+def _unit_notes(job: Job, metrics: dict, geometry_doc: dict) -> list[str]:
+    """Sanity notes for uploads: material E/density vs the unit system used, and stress vs force / area."""
+    notes = material_warnings(job.starter_text, metrics.get("units_in"))
+    lo, hi = geometry_doc.get("bbox_min_mm"), geometry_doc.get("bbox_max_mm")
+    note = force_stress_warning(metrics.get("peak_force_N"), metrics.get("max_von_mises_Pa"),
+                                [v / 1000.0 for v in lo] if lo else None, [v / 1000.0 for v in hi] if hi else None)
+    return notes + ([note] if note else [])
+
+
+def _mesh_from_deck(text: str, units: str = ""):
     """Best-effort /NODE + /BRICK, /SHELL, /SH3N parse so an uploaded deck can still be viewed.
 
     Brick-only decks return a geometry.HexMesh (unchanged exports); decks with shells a DeckMesh."""
-    return mesh_from_deck(text)
+    return mesh_from_deck(text, UPLOAD_UNIT_SYSTEMS.get(units))
 
 
 def _safe_name(name: str, material: str) -> str:

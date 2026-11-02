@@ -53,6 +53,9 @@ message DeckUpload {
   bytes engine_deck = 4;
   // OpenMP threads for engine_linux64_gf. 0 = the worker's OMP_NUM_THREADS default.
   int32 threads = 5;
+  // Unit system the deck's data are written in: "" / "auto" = the /BEGIN card, or one of
+  // "kg-m-s", "g-mm-ms", "kg-mm-ms", "t-mm-s" when /BEGIN is wrong. Only changes how results are labelled.
+  string units = 6;
 }
 
 // Photo-derived fork, or an uploaded STL, meshed to Radioss hexes.

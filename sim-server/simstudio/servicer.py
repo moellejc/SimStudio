@@ -229,10 +229,23 @@ def _job_from_deck(request) -> Job:
         template_id="upload",
         material="steel",
         threads=_upload_threads(deck.threads),
+        units=_upload_units(getattr(deck, "units", "")),
         starter_text=starter.decode("utf-8", errors="replace"),
         engine_text=engine.decode("utf-8", errors="replace"),
         run_name=run,
     )
+
+
+def _upload_units(requested: str) -> str:
+    """'' for /BEGIN (auto), else one of sanity.UPLOAD_UNIT_SYSTEMS."""
+    from simstudio.sanity import UPLOAD_UNIT_SYSTEMS
+
+    value = (requested or "").strip().lower()
+    if value in ("", "auto"):
+        return ""
+    if value not in UPLOAD_UNIT_SYSTEMS:
+        raise ValueError(f"units must be auto or one of {', '.join(UPLOAD_UNIT_SYSTEMS)}")
+    return value
 
 
 def _upload_threads(requested: int) -> int:

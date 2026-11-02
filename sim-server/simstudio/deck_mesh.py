@@ -183,7 +183,7 @@ class DeckMesh:
         return summary
 
 
-def mesh_from_deck(text: str) -> HexMesh | DeckMesh | None:
+def mesh_from_deck(text: str, units=None) -> HexMesh | DeckMesh | None:
     """Best-effort /NODE + /BRICK, /SHELL, /SH3N parse. None when there are no nodes or no usable elements."""
     nodes: list[tuple[int, float, float, float]] = []
     elems: dict[str, list[list[int]]] = {"brick": [], "shell": [], "sh3n": []}
@@ -208,6 +208,9 @@ def mesh_from_deck(text: str) -> HexMesh | DeckMesh | None:
         return None
     id_map = {node_id: index for index, (node_id, *_) in enumerate(nodes)}
     length_unit, to_mm = deck_length_unit(text)
+    if units:                                          # per-upload override (mass, length, time)
+        from post._vendor.postprocess import LEN_SI
+        length_unit, to_mm = units[1], LEN_SI[units[1]] * 1000.0
     pts = np.array([[x, y, z] for _, x, y, z in nodes], float) * to_mm   # previews and stats are in mm
 
     def mapped(rows, n):
@@ -242,6 +245,7 @@ _LEN_TO_M = {"m": 1.0, "dm": 0.1, "cm": 0.01, "mm": 1e-3, "um": 1e-6, "mum": 1e-
 
 def deck_length_unit(text: str) -> tuple[str | None, float]:
     """Input length unit from /BEGIN (4th non-comment line after it: mass length time) and its factor to mm.
+    Node coordinates are written in input units (the solver converts them to work units).
     Unknown or missing units keep the old assumption (mm, factor 1)."""
     lines = []
     for raw in text.splitlines():

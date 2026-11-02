@@ -69,6 +69,9 @@ async function createTemplate(request: Request, userId: string) {
   return NextResponse.json({ simulation }, { status: 201 });
 }
 
+// Unit system the uploaded deck's data are in; "auto" trusts its /BEGIN card (sim-server sanity.UPLOAD_UNIT_SYSTEMS).
+const UPLOAD_UNITS = ["auto", "kg-m-s", "g-mm-ms", "kg-mm-ms", "t-mm-s"];
+
 async function createUpload(request: Request, userId: string) {
   const form = await request.formData();
   const name = String(form.get("name") || "").trim();
@@ -79,6 +82,10 @@ async function createUpload(request: Request, userId: string) {
   const threads = threadsRaw == null || threadsRaw === "" ? 0 : Number(threadsRaw);
   if (!Number.isInteger(threads) || threads < 0 || threads > 16) {
     return NextResponse.json({ error: "Threads must be a whole number from 1 to 16." }, { status: 400 });
+  }
+  const units = String(form.get("units") || "auto").trim().toLowerCase();
+  if (!UPLOAD_UNITS.includes(units)) {
+    return NextResponse.json({ error: `Units must be one of ${UPLOAD_UNITS.join(", ")}.` }, { status: 400 });
   }
   if (!name || !(starter instanceof File) || !(engine instanceof File)) {
     return NextResponse.json({ error: "Name, starter deck, and engine deck are required." }, { status: 400 });
@@ -95,7 +102,7 @@ async function createUpload(request: Request, userId: string) {
       sourceType: "upload",
       templateId: "upload",
       dryRun,
-      parameters: { runName: run, threads: threads || null },
+      parameters: { runName: run, threads: threads || null, units },
       status: "queued",
       message: "Queued",
     },
@@ -112,6 +119,7 @@ async function createUpload(request: Request, userId: string) {
         engineFilename: engine.name,
         engineDeck: new Uint8Array(await engine.arrayBuffer()),
         threads,
+        units: units === "auto" ? "" : units,
       },
     });
   } catch (error) {
