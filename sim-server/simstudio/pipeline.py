@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from geometry import HexMesh, build_fork
+from geometry import build_fork
 from post import artifact_manifest, metrics_to_rows, process_run
 from runner import (
     DeckSpec,
@@ -21,6 +21,7 @@ from runner import (
     solver_environment,
 )
 from simstudio.config import Settings
+from simstudio.deck_mesh import mesh_from_deck, skip_missing_includes
 
 log = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ def run_job(job: Job, settings: Settings, bus, sink, storage) -> None:
             phase("meshing", 8, "Using the uploaded starter and engine decks")
             mesh = _mesh_from_deck(job.starter_text)
             if mesh is None:
-                raise RuntimeError("Uploaded starter has no /NODE and /BRICK mesh to view")
+                raise RuntimeError("Uploaded starter has no /NODE mesh with /BRICK, /SHELL or /SH3N elements to view")
             geometry_doc = mesh.export_all(str(work / "geometry"), title=job.name)
             include = Path(geometry_doc["files"]["radioss_inc"])
             run_name = job.run_name or "RUN"
@@ -103,6 +104,8 @@ def run_job(job: Job, settings: Settings, bus, sink, storage) -> None:
             engine_path = run_dir / f"{run_name}_0001.rad"
             starter_path.write_text(job.starter_text)
             engine_path.write_text(job.engine_text)
+            for deck_path in (starter_path, engine_path):
+                skip_missing_includes(deck_path, log=lambda line: bus.log(sim, "deck", line))
             spec = DeckSpec(
                 name=run_name,
                 material=job.material if job.material in {"steel", "aluminum", "plastic"} else "steel",
@@ -223,47 +226,11 @@ class Cancelled(Exception):
     pass
 
 
-def _mesh_from_deck(text: str) -> HexMesh | None:
-    """Best-effort /NODE + /BRICK parse so an uploaded deck can still be viewed."""
-    import numpy as np
+def _mesh_from_deck(text: str):
+    """Best-effort /NODE + /BRICK, /SHELL, /SH3N parse so an uploaded deck can still be viewed.
 
-    nodes: list[tuple[int, float, float, float]] = []
-    bricks: list[list[int]] = []
-    section = None
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("/NODE"):
-            section = "node"
-            continue
-        if stripped.startswith("/BRICK"):
-            section = "brick"
-            continue
-        if stripped.startswith("/"):
-            section = None
-            continue
-        if not stripped or stripped.startswith("#"):
-            continue
-        parts = stripped.split()
-        try:
-            nums = [float(part) for part in parts]
-        except ValueError:
-            continue
-        if section == "node" and len(nums) >= 4:
-            nodes.append((int(nums[0]), nums[1], nums[2], nums[3]))
-        elif section == "brick" and len(nums) >= 9:
-            bricks.append([int(n) for n in nums[1:9]])
-    if len(nodes) < 8 or not bricks:
-        return None
-    id_map = {node_id: index for index, (node_id, *_) in enumerate(nodes)}
-    elems = [row for row in bricks if all(node in id_map for node in row)]
-    if not elems:
-        return None
-    mesh = HexMesh(
-        nodes=np.array([[x, y, z] for _, x, y, z in nodes], float),
-        elems=np.array([[id_map[node] for node in row] for row in elems], int),
-    )
-    mesh.meta = {"source": "upload"}
-    return mesh
+    Brick-only decks return a geometry.HexMesh (unchanged exports); decks with shells a DeckMesh."""
+    return mesh_from_deck(text)
 
 
 def _safe_name(name: str, material: str) -> str:

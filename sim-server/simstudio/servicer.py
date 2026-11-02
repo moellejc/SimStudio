@@ -228,11 +228,24 @@ def _job_from_deck(request) -> Job:
         dry_run=bool(request.dry_run),
         template_id="upload",
         material="steel",
-        threads=1,
+        threads=_upload_threads(deck.threads),
         starter_text=starter.decode("utf-8", errors="replace"),
         engine_text=engine.decode("utf-8", errors="replace"),
         run_name=run,
     )
+
+
+def _upload_threads(requested: int) -> int:
+    """Study thread count for uploaded decks: the request's value, else OMP_NUM_THREADS, clamped to 1..16."""
+    import os
+
+    value = int(requested or 0)
+    if value <= 0:
+        try:
+            value = int(os.environ.get("OMP_NUM_THREADS", "1"))
+        except ValueError:
+            value = 1
+    return max(1, min(16, value))
 
 
 def _run_name(starter_filename: str, engine_filename: str) -> str:

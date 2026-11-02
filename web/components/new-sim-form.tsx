@@ -102,6 +102,7 @@ export function NewSimForm() {
             Engine (*_0001.rad)
             <input name="engine" type="file" accept=".rad" required className="mt-1 block w-full text-sm" />
           </label>
+          <Field name="threads" label="OpenMP threads" defaultValue="2" />
         </div>
       )}
       <label className="flex items-start gap-2 text-sm">

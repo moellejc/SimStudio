@@ -51,6 +51,8 @@ message DeckUpload {
   bytes starter_deck = 2;
   string engine_filename = 3;
   bytes engine_deck = 4;
+  // OpenMP threads for engine_linux64_gf. 0 = the worker's OMP_NUM_THREADS default.
+  int32 threads = 5;
 }
 
 // Photo-derived fork, or an uploaded STL, meshed to Radioss hexes.

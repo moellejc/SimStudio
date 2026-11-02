@@ -75,6 +75,11 @@ async function createUpload(request: Request, userId: string) {
   const dryRun = form.get("dryRun") != null;
   const starter = form.get("starter");
   const engine = form.get("engine");
+  const threadsRaw = form.get("threads");
+  const threads = threadsRaw == null || threadsRaw === "" ? 0 : Number(threadsRaw);
+  if (!Number.isInteger(threads) || threads < 0 || threads > 16) {
+    return NextResponse.json({ error: "Threads must be a whole number from 1 to 16." }, { status: 400 });
+  }
   if (!name || !(starter instanceof File) || !(engine instanceof File)) {
     return NextResponse.json({ error: "Name, starter deck, and engine deck are required." }, { status: 400 });
   }
@@ -90,7 +95,7 @@ async function createUpload(request: Request, userId: string) {
       sourceType: "upload",
       templateId: "upload",
       dryRun,
-      parameters: { runName: run },
+      parameters: { runName: run, threads: threads || null },
       status: "queued",
       message: "Queued",
     },
@@ -106,6 +111,7 @@ async function createUpload(request: Request, userId: string) {
         starterDeck: new Uint8Array(await starter.arrayBuffer()),
         engineFilename: engine.name,
         engineDeck: new Uint8Array(await engine.arrayBuffer()),
+        threads,
       },
     });
   } catch (error) {
