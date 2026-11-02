@@ -22,6 +22,7 @@ export function GltfViewport({
   onContract,
   onFrame,
   onPlaybackEnd,
+  onPeaks,
 }: {
   url: string;
   partUrl: string | null;
@@ -32,6 +33,7 @@ export function GltfViewport({
   onContract: (contract: SurfaceContract) => void;
   onFrame: (frame: number) => void;
   onPlaybackEnd: () => void;
+  onPeaks?: (vmPeaks: number[]) => void;
 }) {
   const [buffer, setBuffer] = useState<ArrayBuffer | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +74,7 @@ export function GltfViewport({
         onContract={onContract}
         onFrame={onFrame}
         onPlaybackEnd={onPlaybackEnd}
+        onPeaks={onPeaks}
       />
     </Canvas>
   );
@@ -87,6 +90,7 @@ function Surface({
   onContract,
   onFrame,
   onPlaybackEnd,
+  onPeaks,
 }: {
   buffer: ArrayBuffer;
   partUrl: string | null;
@@ -97,12 +101,15 @@ function Surface({
   onContract: (contract: SurfaceContract) => void;
   onFrame: (frame: number) => void;
   onPlaybackEnd: () => void;
+  onPeaks?: (vmPeaks: number[]) => void;
 }) {
   const contract = useMemo(() => parseSurfaceContract(buffer), [buffer]);
   const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
   const [result, setResult] = useState<THREE.Group | null>(null);
   const [part, setPart] = useState<THREE.Group | null>(null);
+  const onPeaksRef = useRef(onPeaks);
+  onPeaksRef.current = onPeaks;
   const mixer = useRef<THREE.AnimationMixer | null>(null);
   const action = useRef<THREE.AnimationAction | null>(null);
   const painted = useRef(-1);
@@ -148,6 +155,7 @@ function Surface({
       action.current = nextAction;
       painted.current = 0;
       setResult(gltf.scene);
+      onPeaksRef.current?.(vonMisesPeaks(gltf.scene, contract.frameCount));
     });
     return () => {
       alive = false;
@@ -158,7 +166,12 @@ function Surface({
   }, [buffer, contract, onPlaybackEnd]);
 
   useEffect(() => {
-    if (!partUrl || !showPart) return;
+    if (!showPart) return;
+    if (!partUrl) {
+      // No input model: ghost of the result's base mesh (frame-1 surface) with every morph weight at 0.
+      if (result) setPart(undeformedGhost(result));
+      return;
+    }
     let alive = true;
     fetch(partUrl)
       .then(async (response) => {
@@ -171,16 +184,7 @@ function Surface({
           if (!alive) return;
           gltf.scene.traverse((object) => {
             const mesh = object as THREE.Mesh;
-            if (!mesh.isMesh) return;
-            const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-            for (const material of materials) {
-              const standard = material as THREE.MeshStandardMaterial;
-              standard.transparent = true;
-              standard.opacity = 0.28;
-              standard.depthWrite = false;
-              standard.vertexColors = false;
-              standard.color = new THREE.Color("#6b7280");
-            }
+            if (mesh.isMesh) mesh.material = ghostMaterial();
           });
           setPart(gltf.scene);
         });
@@ -189,7 +193,7 @@ function Surface({
     return () => {
       alive = false;
     };
-  }, [partUrl, showPart]);
+  }, [partUrl, showPart, result]);
 
   useEffect(() => {
     if (!result || playing) return;
@@ -199,8 +203,11 @@ function Surface({
     const index = Math.min(frame, contract.frameCount - 1);
     clip.reset();
     clip.play();
-    mix.setTime(contract.times[index] ?? 0);
+    // A paused action ignores mixer.setTime (its time scale is 0), so put the clip time on the frame and
+    // apply it with a zero-length update; otherwise a scrubbed frame keeps the frame-1 shape.
+    clip.time = contract.times[index] ?? 0;
     clip.paused = true;
+    mix.update(0);
     result.traverse((object) => {
       const mesh = object as THREE.Mesh;
       if (mesh.isMesh) paint(mesh.geometry, field, index, contract);
@@ -217,9 +224,9 @@ function Surface({
       return;
     }
     const end = contract.times[contract.frameCount - 1] ?? 0;
-    if ((mixer.current?.time ?? 0) >= end - 1e-6) {
+    if (clip.time >= end - 1e-6) {
       clip.reset();
-      mixer.current?.setTime(contract.times[0] ?? 0);
+      clip.time = contract.times[0] ?? 0;
       painted.current = -1;
     }
     clip.paused = false;
@@ -237,10 +244,11 @@ function Surface({
   useFrame((_, delta) => {
     const mix = mixer.current;
     if (!mix || !playingRef.current || !result) return;
-    const before = mix.time;
+    const clip = action.current;
+    if (!clip || clip.paused) return;
     mix.update(delta);
-    if (mix.time === before && (action.current?.paused ?? false)) return;
-    const index = frameAtTime(mix.time, contract.times);
+    // frames are keyed on the clip's own (slowed) time, not the mixer's wall-clock time
+    const index = frameAtTime(clip.time, contract.times);
     if (index !== painted.current) {
       result.traverse((object) => {
         const mesh = object as THREE.Mesh;
@@ -282,4 +290,46 @@ function paint(geometry: THREE.BufferGeometry, field: Field, frame: number, cont
     color.setXYZ(i, r, g, b);
   }
   color.needsUpdate = true;
+}
+
+function ghostMaterial() {
+  return new THREE.MeshStandardMaterial({
+    color: new THREE.Color("#6b7280"),
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+    vertexColors: false,
+    side: THREE.DoubleSide,
+  });
+}
+
+/** Clone of the result scene sharing its geometry, with its own all-zero morph weights and a grey ghost material. */
+export function undeformedGhost(scene: THREE.Object3D): THREE.Group {
+  const group = new THREE.Group();
+  const ghost = scene.clone(true);
+  ghost.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.material = ghostMaterial();
+    if (mesh.morphTargetInfluences) mesh.morphTargetInfluences = mesh.morphTargetInfluences.map(() => 0);
+  });
+  group.add(ghost);
+  return group;
+}
+
+/** Largest _von_mises_#### value per frame over every mesh in the scene (0 when a frame has no attribute). */
+function vonMisesPeaks(scene: THREE.Object3D, frames: number): number[] {
+  const peaks = new Array(Math.max(frames, 0)).fill(0);
+  scene.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    for (let k = 0; k < peaks.length; k++) {
+      const values = mesh.geometry.getAttribute(`_von_mises_${String(k).padStart(4, "0")}`) as THREE.BufferAttribute | undefined;
+      if (!values) continue;
+      let peak = peaks[k];
+      for (let i = 0; i < values.count; i++) peak = Math.max(peak, values.getX(i));
+      peaks[k] = peak;
+    }
+  });
+  return peaks;
 }

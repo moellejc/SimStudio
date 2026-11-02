@@ -36,7 +36,7 @@ type Simulation = {
     added_mass_pct?: number | null;
     buckling_reason?: string | null;
     fracture_onset?: { load_N?: number; time_s?: number } | null;
-    geometry?: { nodes?: number; bricks?: number; volume_mm3?: number; bbox_min_mm?: number[]; bbox_max_mm?: number[] };
+    geometry?: { nodes?: number; bricks?: number; shells?: number; volume_mm3?: number | null; bbox_min_mm?: number[]; bbox_max_mm?: number[] };
     notes?: string[];
   } | null;
   artifacts: Artifact[];
@@ -158,8 +158,11 @@ export function SimDetail({ id }: { id: string }) {
       ) : null}
       {geometry ? (
         <p className="text-sm text-[#5c5348]">
-          Mesh {geometry.nodes} nodes, {geometry.bricks} bricks, volume {geometry.volume_mm3?.toFixed(0)} mm³. Bounding box Z{" "}
-          {geometry.bbox_min_mm?.[2]} to {geometry.bbox_max_mm?.[2]} mm. Floor is Z = 0; the part stands 1 mm above it and the push is along −Z.
+          Mesh {geometry.nodes} nodes, {geometry.bricks ?? 0} bricks
+          {geometry.shells ? `, ${geometry.shells} shells` : ""}
+          {geometry.volume_mm3 == null ? "" : `, volume ${geometry.volume_mm3.toFixed(0)} mm³`}. Bounding box Z{" "}
+          {geometry.bbox_min_mm?.[2]} to {geometry.bbox_max_mm?.[2]} mm.
+          {geometry.shells ? "" : " Floor is Z = 0; the part stands 1 mm above it and the push is along −Z."}
         </p>
       ) : null}
       {sim.status === "succeeded" ? (

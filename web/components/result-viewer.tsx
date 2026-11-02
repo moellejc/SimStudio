@@ -1,8 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useState } from "react";
-import type { SurfaceContract } from "@/lib/glb-contract";
+import { useCallback, useRef, useState } from "react";
+import { defaultFrame, type SurfaceContract } from "@/lib/glb-contract";
 
 const GltfViewport = dynamic(() => import("@/components/gltf-viewport").then((mod) => mod.GltfViewport), {
   ssr: false,
@@ -16,7 +16,17 @@ export function ResultViewer({ id, partUrl, mp4Url }: { id: string; partUrl: str
   const [field, setField] = useState<"stress" | "strain">("stress");
   const [contract, setContract] = useState<SurfaceContract | null>(null);
   const frames = contract?.frameCount ?? 1;
-  const onContract = useCallback((next: SurfaceContract) => setContract(next), []);
+  const touched = useRef(false);
+  const contractRef = useRef<SurfaceContract | null>(null);
+  const onContract = useCallback((next: SurfaceContract) => {
+    contractRef.current = next;
+    setContract(next);
+  }, []);
+  // Open on the peak-load frame (or the max von Mises frame) once the surface is parsed.
+  const onPeaks = useCallback((peaks: number[]) => {
+    if (touched.current || !contractRef.current) return;
+    setFrame(defaultFrame(contractRef.current, peaks));
+  }, []);
   const onFrame = useCallback((next: number) => setFrame(next), []);
   const onPlaybackEnd = useCallback(() => setPlaying(false), []);
 
@@ -28,6 +38,7 @@ export function ResultViewer({ id, partUrl, mp4Url }: { id: string; partUrl: str
   const millis = current ? (current.animTime * 1000).toFixed(1) : "0.0";
 
   function step(delta: number) {
+    touched.current = true;
     setPlaying(false);
     setFrame((value) => (value + delta + frames) % frames);
   }
@@ -38,7 +49,10 @@ export function ResultViewer({ id, partUrl, mp4Url }: { id: string; partUrl: str
         <button type="button" className="rounded border px-2 py-1" onClick={() => step(-1)}>
           Prev
         </button>
-        <button type="button" className="rounded border px-2 py-1" onClick={() => setPlaying((value) => !value)}>
+        <button type="button" className="rounded border px-2 py-1" onClick={() => {
+            touched.current = true;
+            setPlaying((value) => !value);
+          }}>
           {playing ? "Pause" : "Play"}
         </button>
         <button type="button" className="rounded border px-2 py-1" onClick={() => step(1)}>
@@ -51,6 +65,7 @@ export function ResultViewer({ id, partUrl, mp4Url }: { id: string; partUrl: str
           max={Math.max(frames - 1, 0)}
           value={Math.min(frame, frames - 1)}
           onChange={(event) => {
+            touched.current = true;
             setPlaying(false);
             setFrame(Number(event.target.value));
           }}
@@ -65,7 +80,12 @@ export function ResultViewer({ id, partUrl, mp4Url }: { id: string; partUrl: str
           </option>
         </select>
         <label className="flex items-center gap-1 text-xs">
-          <input type="checkbox" checked={showPart} disabled={!partUrl} onChange={(event) => setShowPart(event.target.checked)} />
+          <input
+            type="checkbox"
+            checked={showPart}
+            title={partUrl ? "Input model (model.glb)" : "Frame-1 surface of the result (no input model stored)"}
+            onChange={(event) => setShowPart(event.target.checked)}
+          />
           Undeformed part
         </label>
       </div>
@@ -80,6 +100,7 @@ export function ResultViewer({ id, partUrl, mp4Url }: { id: string; partUrl: str
           onContract={onContract}
           onFrame={onFrame}
           onPlaybackEnd={onPlaybackEnd}
+          onPeaks={onPeaks}
         />
         <Legend lo={lo} hi={hi} unit={unit} />
       </div>

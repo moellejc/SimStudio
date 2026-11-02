@@ -5,7 +5,9 @@ Each model becomes one `simulations` row (status succeeded, source_type "import"
 owned by an existing user, with its GLB and manifests uploaded to S3 under
 sims/<id>/post/gltf/. The simulation id is a uuid5 of "<set>/<model>", so
 re-running for a model replaces that study's row, metrics, artifacts, and S3
-objects in place (idempotent per model).
+objects in place (idempotent per model). The set's undeformed input part
+(geometry/fork_*/model.glb, same metres / Y-up axes) is uploaded every time as
+sims/<id>/input/model.glb (artifact kind "input/model.glb"), so a re-import keeps it.
 
     python sim-server/scripts/import_forks.py plastic             # fork45v2 plastic
     python sim-server/scripts/import_forks.py plastic aluminum
@@ -40,10 +42,13 @@ SETS = {
     "fork45v2": {
         "dir": "/workspace/openradioss/results/fork45v2_viewer/gltf",
         "title": "Fork 45 v2",
+        # undeformed input part (same metres / Y-up axes as the result GLB), shown by "Undeformed part"
+        "input_model": "/workspace/simstudio-handoff/geometry/fork_realistic/model.glb",
     },
     "fork45": {
         "dir": "/workspace/openradioss/results/fork45_viewer/gltf",
         "title": "Fork 45 (uniform 45 kg)",
+        "input_model": "/workspace/simstudio-handoff/geometry/fork_uniform/model.glb",
     },
 }
 NAMESPACE = uuid.UUID("5b0c8f1e-6a51-4d1c-9a43-6f726b343500")
@@ -149,11 +154,17 @@ def main() -> int:
     ap.add_argument("models", nargs="+", help="material names in the set's manifest.json (e.g. plastic aluminum), or 'all'")
     ap.add_argument("--set", default="fork45v2", choices=sorted(SETS))
     ap.add_argument("--dir", help="override the set's gltf directory")
+    ap.add_argument("--input-model", help="override the set's undeformed input model.glb ('' to skip it)")
     ap.add_argument("--email", default=os.environ.get("IMPORT_USER_EMAIL", "ada@simstudio.test"))
     ap.add_argument("--wait", type=float, default=3.0, help="seconds to confirm the GLB size is stable")
     args = ap.parse_args()
 
     gdir = Path(args.dir or SETS[args.set]["dir"])
+    input_model = SETS[args.set].get("input_model") if args.input_model is None else args.input_model
+    input_model = Path(input_model) if input_model else None
+    if input_model and not input_model.is_file():
+        print(f"[warn] input model {input_model} not found; studies will use the result ghost for 'Undeformed part'")
+        input_model = None
     manifest = json.loads((gdir / "manifest.json").read_text())
     runs = {r["material"]: r for r in manifest["runs"]}
     wanted = sorted(runs) if args.models == ["all"] else args.models
@@ -203,6 +214,8 @@ def main() -> int:
             ]
             for png in sorted(gdir.glob(f"verify_{model}_*.png")):
                 uploads.append((png, f"post/gltf/{png.name}", "image/png", f"gltf/{png.name}"))
+            if input_model:
+                uploads.append((input_model, "input/model.glb", "model/gltf-binary", "input/model.glb"))
 
             old = s3.list_objects_v2(Bucket=bucket, Prefix=prefix + "/").get("Contents", [])
             for obj in old:

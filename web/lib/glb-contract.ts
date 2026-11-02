@@ -26,6 +26,8 @@ export type SurfaceContract = {
   plasticStrainMax: number;
   hasPlasticStrain: boolean;
   stressUnit: string;
+  /** Last physical load_time (s) when the export marks later frames unphysical; null when not given. */
+  physicalUntil: number | null;
 };
 
 type GltfJson = {
@@ -83,6 +85,7 @@ export function parseSurfaceContract(buffer: ArrayBuffer): SurfaceContract {
     plasticStrainMax: strain ? Number(strain[1]) : 1,
     hasPlasticStrain: strainNames.length > 0,
     stressUnit: String(extras.stress_unit ?? "Pa"),
+    physicalUntil: extras.physical_until_s == null ? null : Number(extras.physical_until_s),
   };
 }
 
@@ -92,4 +95,41 @@ export function frameAtTime(time: number, times: number[]): number {
     if (times[i] <= time + 1e-9) index = i;
   }
   return index;
+}
+
+/**
+ * Frame the viewer opens on: the peak-load frame (first frame at the largest |load_N|, ignoring frames
+ * after physicalUntil), else the frame with the largest von Mises value (vmPeaks[k] = max over frame k),
+ * else the last frame.
+ */
+export function defaultFrame(contract: Pick<SurfaceContract, "frames" | "frameCount" | "physicalUntil">, vmPeaks?: number[] | null): number {
+  const count = Math.max(contract.frameCount, 0);
+  if (count === 0) return 0;
+  const physical = (index: number) => {
+    const frame = contract.frames[index];
+    return contract.physicalUntil == null || !frame || frame.loadTime <= contract.physicalUntil + 1e-9;
+  };
+  let best = -1;
+  let bestLoad = 0;
+  for (let i = 0; i < Math.min(count, contract.frames.length); i++) {
+    const load = contract.frames[i].loadN;
+    if (load == null || !Number.isFinite(load) || !physical(i)) continue;
+    if (Math.abs(load) > bestLoad + 1e-12) {
+      bestLoad = Math.abs(load);
+      best = i;
+    }
+  }
+  if (best >= 0) return best;
+  if (vmPeaks && vmPeaks.length) {
+    let peak = -Infinity;
+    for (let i = 0; i < Math.min(count, vmPeaks.length); i++) {
+      if (!physical(i)) continue;
+      if (vmPeaks[i] > peak) {
+        peak = vmPeaks[i];
+        best = i;
+      }
+    }
+    if (best >= 0) return best;
+  }
+  return count - 1;
 }
