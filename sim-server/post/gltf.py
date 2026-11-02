@@ -130,6 +130,8 @@ def frames_to_glb(vtk_files, out_glb, *, times=None, load_times=None, loads=None
     if not live.any():
         live[:] = True
     struct = live & (es0 != 0) & (dim >= 2)     # rigid caps / bodies inactive from t=0 are excluded
+    if "ELEMENT_ID" in m0.cell_data.keys():     # OpenRadioss elements only (drops floor / helper cells with id 0)
+        struct &= np.asarray(m0.cell_data["ELEMENT_ID"]) > 0
     if not struct.any():
         raise ValueError("no structural cells")
     tri, vpt, vcell = build_surface(m0, struct)
